@@ -11,6 +11,7 @@ namespace SIMS
         public string Description { get; set; } = "";
         public string Title { get; set; } = "";
         public int Incident_type { get; set; } = 1;
+        public string Resource_id { get; set; } = ""; // Ensure this is initialized to an empty string
 
         public Incident() { }
 
@@ -31,6 +32,7 @@ namespace SIMS
                             Title = (string)reader["Title"];
                             Reported_at = Convert.ToDateTime(reader["Reported_at"]);
                             Incident_type = Convert.ToInt32(reader["Incident_type_id"]);
+                            Resource_id = reader["resource_id"] as string ?? ""; // Handle NULL values
                         }
                     }
                 }
@@ -57,7 +59,9 @@ namespace SIMS
                                 Description = (string)reader["Description"],
                                 Title = (string)reader["Title"],
                                 Reported_at = Convert.ToDateTime(reader["Reported_at"]),
-                                Incident_type = Convert.ToInt32(reader["Incident_type_id"])
+                                Incident_type = Convert.ToInt32(reader["Incident_type_id"]),
+                                Resource_id = reader["resource_id"] as string ?? "" // Handle NULL values
+
                             };
                             result.Add(item);
                         }
@@ -92,6 +96,7 @@ namespace SIMS
                     cmd.Parameters.AddWithValue("title", Title);
                     cmd.Parameters.AddWithValue("resolved", Resolved);
                     cmd.Parameters.AddWithValue("incident_type_id", Incident_type);
+                    cmd.Parameters.AddWithValue("resource_id", Resource_id);
                     cmd.ExecuteNonQuery();
                 }
                 db.Close();
