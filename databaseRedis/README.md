@@ -1,1 +1,0 @@
-docker run --name redisdb1 -p6379:6379 -d redis
