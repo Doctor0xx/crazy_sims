@@ -6,19 +6,19 @@ version: '3.8'
 name: simsdemo
 
 services:
-    redisdb1:
-        container_name: redisdb1
-        ports:
-            - 6379:6379
-        image: redis
+    # redisdb1:
+    #     container_name: redisdb1
+    #     ports:
+    #         - 6379:6379
+    #     image: redis
     simsapi1:
         container_name: simsapi1
         ports:
             - 8888:8080
         environment:
             - redisdb=redisdb1
-        links:
-            - redisdb1
+        # links:
+        #     - redisdb1
         image: simsapi:latest
     sims1:
         container_name: sims1

@@ -4,18 +4,23 @@ namespace SIMSAPI
 {
     public class RedisDB
     {
-        private string dbname = "";
+        private readonly ConfigurationOptions config;
 
-        public RedisDB() 
+        public RedisDB()
         {
-            dbname = Environment.GetEnvironmentVariable("redisdb") ?? "localhost";
+            config = new ConfigurationOptions
+            {
+                EndPoints = { "redisdb1-axk2jy.serverless.apne1.cache.amazonaws.com:6379" },
+                Ssl = true,
+                AbortOnConnectFail = false
+            };
         }
 
-        public void StoreToken(string username, string token) 
+        public void StoreToken(string username, string token)
         {
             try
             {
-                ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(dbname);
+                using var redis = ConnectionMultiplexer.Connect(config);
                 IDatabase db = redis.GetDatabase();
                 db.StringSet(username, token);
             }
@@ -29,15 +34,14 @@ namespace SIMSAPI
         {
             try
             {
-                ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(dbname);
+                using var redis = ConnectionMultiplexer.Connect(config);
                 IDatabase db = redis.GetDatabase();
-                return db.StringGet(username).ToString() == token ? true : false;
+                return db.StringGet(username) == token;
             }
             catch
             {
                 throw;
             }
         }
-
     }
 }
