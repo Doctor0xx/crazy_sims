@@ -87,8 +87,39 @@
         NavManager.NavigateTo("incidents");
     }
 
-    private void cmdEscalate_Clicked()
+    private async Task cmdEscalate_Clicked()
     {
-        escalateMessage = "Sorry, not implemented";
+        var httpClient = new HttpClient();
+
+        var requestBody = new
+        {
+            Date = incident.Reported_at,
+            Title = incident.Title,
+            Description = incident.Description,
+            ResourceId = incident.Resource_id,
+            Type = incident.Incident_type,
+            Closed = incident.Resolved
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+        try
+        {
+            var response = await httpClient.PostAsync("https://3m2bdnihq0.execute-api.ap-northeast-1.amazonaws.com/default", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                escalateMessage = "Escalation triggered successfully!";
+            }
+            else
+            {
+                escalateMessage = $"Failed to escalate: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            escalateMessage = $"Error: {ex.Message}";
+        }
     }
 }
