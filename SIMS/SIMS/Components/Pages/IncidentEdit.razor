@@ -1,6 +1,7 @@
 ﻿@page "/incidentedit"
 @using Microsoft.AspNetCore.Http.Extensions
 @using Microsoft.AspNetCore.WebUtilities
+@using System.Text
 @rendermode InteractiveServer
 @attribute [StreamRendering]
 @inject NavigationManager NavManager
@@ -89,37 +90,152 @@
 
     private async Task cmdEscalate_Clicked()
     {
-        var httpClient = new HttpClient();
-
-        var requestBody = new
-        {
-            Date = incident.Reported_at,
-            Title = incident.Title,
-            Description = incident.Description,
-            ResourceId = incident.Resource_id,
-            Type = incident.Incident_type,
-            Closed = incident.Resolved
-        };
-
-        var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
-        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
         try
         {
-            var response = await httpClient.PostAsync("https://3m2bdnihq0.execute-api.ap-northeast-1.amazonaws.com/default", content);
+            // AWS credentials
+            string awsAccessKey = Environment.GetEnvironmentVariable("awsAccessKey");
+            string awsSecretKey = Environment.GetEnvironmentVariable("awsSecretKey");
+            string awsRegion = "ap-northeast-1";
+            string service = "execute-api";
 
+            // API Gateway URL
+            string lambdaApiUrl = "https://3m2bdnihq0.execute-api.ap-northeast-1.amazonaws.com/default/IncidentEscalationHandler";
+
+            // Create the payload from the incident data
+            var payload = new
+            {
+                Title = incident.Title,
+                Description = incident.Description,
+                Date = incident.Reported_at.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                ResourceId = incident.Resource_id,
+                Type = incidenttypeArray[incident.Incident_type - 1],
+                Closed = incident.Resolved
+            };
+
+            // Convert payload to JSON
+            string jsonPayload = System.Text.Json.JsonSerializer.Serialize(payload);
+
+            // Create a request message
+            var request = new HttpRequestMessage(HttpMethod.Post, lambdaApiUrl);
+            request.Content = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
+
+            // Add AWS SigV4 authentication
+            await SignRequestAsync(request, awsAccessKey, awsSecretKey, awsRegion, service, jsonPayload);
+
+            // Send the request
+            using var httpClient = new HttpClient();
+            var response = await httpClient.SendAsync(request);
+            
+            // Handle response
             if (response.IsSuccessStatusCode)
             {
-                escalateMessage = "Escalation triggered successfully!";
+                string responseBody = await response.Content.ReadAsStringAsync();
+                escalateMessage = "Incident escalated successfully!";
             }
             else
             {
-                escalateMessage = $"Failed to escalate: {response.StatusCode}";
+                escalateMessage = $"Error: {response.StatusCode} - {await response.Content.ReadAsStringAsync()}";
             }
         }
         catch (Exception ex)
         {
             escalateMessage = $"Error: {ex.Message}";
         }
+    }
+
+
+    private async Task SignRequestAsync(HttpRequestMessage request, string accessKey, string secretKey, string region, string service, string content)
+    {
+        // Current time in ISO8601 format - Fix the format to match AWS expectations
+        string amzDate = DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ");
+        string dateStamp = DateTime.UtcNow.ToString("yyyyMMdd");
+        
+        // Make sure we don't add headers that might already exist
+        request.Headers.Remove("X-Amz-Date");
+        request.Headers.Remove("Host");
+        request.Headers.Remove("Authorization");
+        
+        // Add required headers
+        request.Headers.Add("X-Amz-Date", amzDate);
+        
+        // Get content type with charset
+        string contentTypeHeader = "application/json; charset=utf-8";
+        
+        // Get host without adding a header (will be added automatically by HttpClient)
+        string host = new Uri(request.RequestUri.AbsoluteUri).Host;
+        
+        // Task 1: Create a canonical request
+        string canonicalUri = request.RequestUri.AbsolutePath;
+        string canonicalQueryString = string.Empty;
+        
+        // Create canonical headers - pay attention to format
+        var canonicalHeaders = new StringBuilder();
+        canonicalHeaders.Append($"content-type:{contentTypeHeader}\n");
+        canonicalHeaders.Append($"host:{host}\n");
+        canonicalHeaders.Append($"x-amz-date:{amzDate}\n");
+        
+        string signedHeaders = "content-type;host;x-amz-date";
+        
+        // Create payload hash - ensure we're calculating this correctly
+        string payloadHash = CreateHash(content);
+        
+        // Create canonical request
+        string canonicalRequest = $"{request.Method}\n{canonicalUri}\n{canonicalQueryString}\n{canonicalHeaders}\n{signedHeaders}\n{payloadHash}";
+        
+        // Task 2: Create a string to sign
+        string algorithm = "AWS4-HMAC-SHA256";
+        string credentialScope = $"{dateStamp}/{region}/{service}/aws4_request";
+        string stringToSign = $"{algorithm}\n{amzDate}\n{credentialScope}\n{CreateHash(canonicalRequest)}";
+        
+        // Task 3: Calculate the signature
+        byte[] signingKey = GetSignatureKey(secretKey, dateStamp, region, service);
+        string signature = ToHexString(HmacSha256(stringToSign, signingKey));
+        
+        // Task 4: Add the signature to the request - format is very specific
+        string authorizationHeader = $"{algorithm} " +
+                                    $"Credential={accessKey}/{credentialScope}, " +
+                                    $"SignedHeaders={signedHeaders}, " +
+                                    $"Signature={signature}";
+        
+        // Update the content type to match what we signed
+        if (request.Content != null)
+        {
+            request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            request.Content.Headers.ContentType.CharSet = "utf-8";
+        }
+        
+        request.Headers.TryAddWithoutValidation("Authorization", authorizationHeader);
+    }
+
+    private string CreateHash(string input)
+    {
+        using (var sha256 = System.Security.Cryptography.SHA256.Create())
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(input);
+            var hash = sha256.ComputeHash(bytes);
+            return ToHexString(hash);
+        }
+    }
+
+    private byte[] HmacSha256(string data, byte[] key)
+    {
+        using (var hmac = new System.Security.Cryptography.HMACSHA256(key))
+        {
+            return hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(data));
+        }
+    }
+
+    private byte[] GetSignatureKey(string key, string dateStamp, string regionName, string serviceName)
+    {
+        byte[] kDate = HmacSha256(dateStamp, System.Text.Encoding.UTF8.GetBytes($"AWS4{key}"));
+        byte[] kRegion = HmacSha256(regionName, kDate);
+        byte[] kService = HmacSha256(serviceName, kRegion);
+        byte[] kSigning = HmacSha256("aws4_request", kService);
+        return kSigning;
+    }
+
+    private string ToHexString(byte[] array)
+    {
+        return BitConverter.ToString(array).Replace("-", "").ToLowerInvariant();
     }
 }
