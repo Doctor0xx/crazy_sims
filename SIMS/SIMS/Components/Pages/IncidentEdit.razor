@@ -34,7 +34,7 @@
             @{int i = 1;}
             @foreach (var item in incidenttypeArray)
             {
-                <option value=@i>@item</option>
+                <option value="@i">@item</option>
                 i++;
             }
         </select>
@@ -44,21 +44,19 @@
         <input type="checkbox" id="closed" @bind="incident.Resolved">
     </div>
     <hr />
+    
+    <!-- Button Section -->
     <div class="form-group" style="margin-top: 10px;">
         <button type="button" class="btn btn-success" @onclick="cmdSave_Clicked">Save incident</button>
         <button type="button" class="btn btn-warning" @onclick="cmdEscalate_Clicked">Escalate</button>
         <span class="text-danger" style="margin-left: 10px; font-weight: bold">@escalateMessage</span>
     </div>
-
 </div>
-
 
 @code {
     private int id = 0;
-
     Incident incident = new Incident();
     string[] incidenttypeArray { get; set; } = new[] { "Ticket", "Issue", "Informational", "Problem" };
-
     string escalateMessage = "";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -66,7 +64,10 @@
         await base.OnAfterRenderAsync(firstRender);
         if (firstRender)
         {
-            if (incident.Incident_id == 0) incident.Reporter = (await ProtectedSessionStore.GetAsync<string>("username")).Value ?? "";
+            if (string.IsNullOrEmpty(incident.Title)) 
+            {
+                incident.Reporter = (await ProtectedSessionStore.GetAsync<string>("username")).Value ?? "";
+            }
             StateHasChanged();
         }
     }
@@ -87,8 +88,24 @@
         NavManager.NavigateTo("incidents");
     }
 
-    private void cmdEscalate_Clicked()
+    private async Task cmdEscalate_Clicked()
     {
-        escalateMessage = "Sorry, not implemented";
+        var httpClient = new HttpClient();
+        var apiUrl = "https://mjbuj9obhd.execute-api.ap-northeast-1.amazonaws.com/prod/escalate";
+        
+        var requestData = new { Title = incident.Title };
+        var jsonContent = new StringContent(JsonSerializer.Serialize(requestData), Encoding.UTF8, "application/json");
+
+        try
+        {
+            var response = await httpClient.PostAsync(apiUrl, jsonContent);
+            escalateMessage = await response.Content.ReadAsStringAsync();
+        }
+        catch (Exception ex)
+        {
+            escalateMessage = "Error triggering escalation.";
+        }
+
+        StateHasChanged();
     }
 }
