@@ -10,13 +10,17 @@ namespace SIMS
 
     }
 }*/
-
-
 using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Amazon.SecretsManager;
 using Amazon.SecretsManager.Model;
+using Amazon;
+using Amazon.S3;
+using Amazon.S3.Model;
+using Amazon.Runtime;
+using Amazon.Extensions.NETCore.Setup;
+using Npgsql;
 
 namespace SIMS
 {
